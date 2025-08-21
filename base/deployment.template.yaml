@@ -1,0 +1,135 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${APP_NAME}  # 应用名称变量（由 Jenkins 传入，如 mservice）
+  namespace: ${NAMESPACE}  # 命名空间变量（如 cosmic-prod）
+  labels:
+    app: ${APP_NAME}
+    cluster: ${CLUSTER_NAME}  # 集群名称变量（如 cosmic-prod）
+    team: ${TEAM_NAME}  # 团队变量（如 finance）
+    argocd.argoproj.io/instance: ${APP_NAME}-${ENV}  # 关联 ArgoCD 实例
+spec:
+  replicas: ${REPLICAS}  # 副本数变量（如 3）2）
+  progressDeadlineSeconds: 60
+  minReadySeconds: 30
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: ${APP_NAME}
+      cluster: ${CLUSTER_NAME}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: ${APP_NAME}
+        cluster: ${CLUSTER_NAME}
+        build-number: "${BUILD_NUMBER}"  # Jenkins 构建号变量
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/actuator/prometheus"
+        logging.kubernetes.io/enabled: "true"
+        sidecar.istio.io/inject: "false"
+    spec:
+      terminationGracePeriodSeconds: 90
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+                - key: node-type
+                  operator: In
+                  values: [worker]
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: ${APP_NAME}
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: ${APP_NAME}
+        image: ${IMAGE_REGISTRY}/${APP_NAME}:${IMAGE_TAG}  # 镜像地址变量（核心）
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /monitor/service/healthcheckk8s
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 2
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /monitor/service/healthcheckk8s
+            port: 8080
+          initialDelaySeconds: 20
+          periodSeconds: 15
+          timeoutSeconds: 3
+          failureThreshold: 5
+        resources:
+          requests:
+            cpu: "${CPU_REQUEST}"  # CPU 请求变量
+            memory: "${MEMORY_REQUEST}"  # 内存请求变量
+          limits:
+            cpu: "${CPU_LIMIT}"  # CPU 限制变量
+            memory: "${MEMORY_LIMIT}"  # 内存限制变量
+            ephemeral-storage: "2Gi"
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL", "SYS_ADMIN", "NET_RAW"]
+            add: ["NET_BIND_SERVICE"]
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
+          appArmorProfile: "localhost/${APP_NAME}-profile"
+        env:
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: ${DB_SECRET_NAME}  # 数据库 Secret 名称变量
+              key: password
+        - name: JVM_OPTS
+          valueFrom:
+            configMapKeyRef:
+              name: ${APP_NAME}-config  # ConfigMap 名称变量
+              key: JVM_OPTS
+        - name: SPRING_PROFILES_ACTIVE
+          value: "${SPRING_PROFILE}"  # Spring 环境变量（如 prod）
+        - name: APP_VERSION
+          value: "${BUILD_NUMBER}"  # 应用版本关联构建号
+        volumeMounts:
+        - name: ${APP_NAME}-logs
+          mountPath: /${APP_NAME}/logs
+          subPath: logs
+        - name: app-config
+          mountPath: /etc/config
+          readOnly: true
+        - name: tmp-storage
+          mountPath: /tmp
+      volumes:
+      - name: ${APP_NAME}-logs
+        persistentVolumeClaim:
+          claimName: ${APP_NAME}-logs-pvc
+          storageClassName: ${STORAGE_CLASS}  # 存储类变量（如 encrypted-sc）
+          volumeMode: Filesystem
+          fsGroup: 1001
+      - name: app-config
+        configMap:
+          name: ${APP_NAME}-config
+          items:
+          - key: application.yml
+            path: config.yml
+          - key: logback.xml
+            path: logback.xml
+      - name: tmp-storage
+        emptyDir: {}

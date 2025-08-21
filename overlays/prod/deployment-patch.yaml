@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${APP_NAME}  # 与基础模板名称一致
+  namespace: cosmic-prod  # 固定生产命名空间
+  spec:
+    replicas: 3
+  template:
+    spec:
+      containers:
+      - name: ${APP_NAME}
+        # 生产环境资源限制（基础模板的默认值可被此处覆盖）
+        resources:
+          requests:
+            cpu: "1000m"  # 生产环境 CPU 请求更高
+            memory: "3Gi"
+          limits:
+            cpu: "2000m"
+            memory: "6Gi"
+        # 生产环境 JVM 参数（基础模板的默认值可被此处覆盖）

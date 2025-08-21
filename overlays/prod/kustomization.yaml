@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# 继承基础模板
+bases:
+- ../../base
+
+# 生产环境特有补丁（覆盖基础模板变量或配置）
+patches:
+- path: deployment-patch.yaml  # 部署补丁
+- path: configmap-patch.yaml   # 配置补丁
+
+# 生产环境标签注入
+commonLabels:
+  environment: prod  # 标记环境为 production

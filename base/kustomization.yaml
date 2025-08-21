@@ -1,0 +1,8 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# 引用基础模板资源
+resources:
+- deployment.template.yaml
+- configmap.template.yaml
+- secret.template.yaml
+# 变量替换通过 Jenkins 完成，此处仅声明资源中使用的变量
